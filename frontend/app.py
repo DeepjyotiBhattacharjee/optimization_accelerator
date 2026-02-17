@@ -4,6 +4,8 @@ import sqlite3
 import json
 import requests
 from datetime import datetime
+import numpy as np
+
 
 st.set_page_config(layout="wide")
 st.title("🧠 Optimization Modeling Studio")
@@ -32,6 +34,26 @@ init_db()
 # SAFE SERIALIZATION
 # =====================================================
 
+def convert_numpy(obj):
+    """
+    Recursively convert numpy types to native Python types.
+    """
+    if isinstance(obj, dict):
+        return {convert_numpy(k): convert_numpy(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy(i) for i in obj]
+    elif isinstance(obj, tuple):
+        return tuple(convert_numpy(i) for i in obj)
+    elif isinstance(obj, (np.integer,)):
+        return int(obj)
+    elif isinstance(obj, (np.floating,)):
+        return float(obj)
+    elif isinstance(obj, (np.bool_,)):
+        return bool(obj)
+    else:
+        return obj
+
+
 def make_json_safe(model_dict):
 
     safe = {}
@@ -39,11 +61,12 @@ def make_json_safe(model_dict):
     # Convert datasets
     safe_datasets = {}
     for name, df in model_dict["datasets"].items():
-        safe_datasets[name] = df.to_dict(orient="records")
+        safe_datasets[name] = convert_numpy(df.to_dict(orient="records"))
     safe["datasets"] = safe_datasets
 
-    # Convert parameters (tuple keys → string)
+    # Convert parameters (tuple keys → string + numpy fix)
     safe_parameters = {}
+
     for pname, pvals in model_dict["parameters"].items():
         new_param = {}
         for key, value in pvals.items():
@@ -51,17 +74,19 @@ def make_json_safe(model_dict):
                 new_key = "|".join(map(str, key))
             else:
                 new_key = str(key)
-            new_param[new_key] = value
-        safe_parameters[pname] = new_param
-    safe["parameters"] = safe_parameters
 
-    # Copy remaining safely
-    safe["sets"] = model_dict["sets"]
-    safe["variables"] = model_dict["variables"]
-    safe["constraints"] = model_dict["constraints"]
+            new_param[new_key] = convert_numpy(value)
+
+        safe_parameters[pname] = new_param
+
+    safe["parameters"] = safe_parameters
+    safe["sets"] = convert_numpy(model_dict["sets"])
+    safe["variables"] = convert_numpy(model_dict["variables"])
+    safe["constraints"] = convert_numpy(model_dict["constraints"])
     safe["objective"] = model_dict["objective"]
 
     return safe
+
 
 
 def save_model(name, model_dict):
