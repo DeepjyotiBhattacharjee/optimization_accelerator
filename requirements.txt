@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pandas
+pulp
+streamlit
+requests
+python-multipart
+ortools
