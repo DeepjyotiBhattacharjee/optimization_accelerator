@@ -350,7 +350,11 @@ elif st.session_state.step == 7:
                 st.session_state.objective_value = result["objective"]
                 st.session_state.solution = pd.DataFrame(result["solution"])
             else:
-                st.error(response.text)
+                st.error(f"Status Code: {response.status_code}")
+                try:
+                    st.json(response.json())
+                except:
+                    st.write(response.text)
 
 # =====================================================
 # PROFESSIONAL OUTPUT PANEL
