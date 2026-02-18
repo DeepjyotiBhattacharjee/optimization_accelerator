@@ -24,21 +24,45 @@ def build_variables(model_def, context):
 
                 df = df[df[col] == val]
 
-                domain_pairs = list(
-                    zip(df[index_sets[0]], df[index_sets[1]])
-                )
+                index_columns = df.columns[:len(index_sets)]
+                domain_pairs = list(zip(*(df[col] for col in index_columns)))
+
             else:
                 domain_pairs = [
                     (i, j)
                     for i in sets[0]
                     for j in sets[1]
                 ]
+            print("DOMAIN PAIRS SAMPLE:", domain_pairs[:5])
 
+            # -----------------------------
+            # Determine bounds correctly
+            # -----------------------------
+            if var_type == "Binary":
+                lowBound = 0
+                upBound = 1
+                cat = "Binary"
+
+            elif var_type == "Integer":
+                lowBound = 0 if low_bound is None else low_bound
+                upBound = None
+                cat = "Integer"
+
+            else:  # Continuous
+                lowBound = 0 if low_bound is None else low_bound
+                upBound = None
+                cat = "Continuous"
+
+            # -----------------------------
+            # Create variables
+            # -----------------------------
             context[name] = {
                 (i, j): LpVariable(
                     f"{name}_{i}_{j}",
-                    lowBound=low_bound,
-                    cat=var_type
+                    lowBound=lowBound,
+                    upBound=upBound,
+                    cat=cat
                 )
                 for (i, j) in domain_pairs
             }
+

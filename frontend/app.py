@@ -261,21 +261,43 @@ elif st.session_state.step == 4:
 
 elif st.session_state.step == 5:
 
-    obj_var = st.selectbox("Variable", [v["name"] for v in st.session_state.variables])
-    obj_param = st.selectbox("Parameter", list(st.session_state.parameters.keys()))
+    obj_var = st.selectbox(
+        "Variable",
+        [v["name"] for v in st.session_state.variables],
+        key="obj_var"
+    )
 
-    selected_var = next(v for v in st.session_state.variables if v["name"] == obj_var)
+    obj_param = st.selectbox(
+        "Parameter",
+        list(st.session_state.parameters.keys()),
+        key="obj_param"
+    )
+
+    selected_var = next(
+        v for v in st.session_state.variables
+        if v["name"] == obj_var
+    )
+
     index_sets = selected_var["index"]
 
     loops = " ".join([f"for {s} in {s}" for s in index_sets])
     index_access = ",".join(index_sets)
 
-    st.session_state.objective = f"sum({obj_param}[{index_access}] * {obj_var}[{index_access}] {loops})"
+    generated_obj = (
+        f"sum({obj_param}[{index_access}] * "
+        f"{obj_var}[{index_access}] {loops})"
+    )
 
-    st.code(st.session_state.objective)
+    st.code(generated_obj)
 
-    if st.button("Next ➡"):
-        st.session_state.step = 6
+    if st.button("Save Objective"):
+        st.session_state.objective = generated_obj
+        st.success("Objective saved.")
+
+    if st.session_state.objective:
+        if st.button("Next ➡"):
+            st.session_state.step = 6
+
 
 # =====================================================
 # STEP 6 — CONSTRAINTS
@@ -283,17 +305,63 @@ elif st.session_state.step == 5:
 
 elif st.session_state.step == 6:
 
-    var_choice = st.selectbox("Constraint Variable", [v["name"] for v in st.session_state.variables])
-    comparator = st.selectbox("Comparator", ["==", "<=", ">="])
-    rhs_param = st.selectbox("RHS Parameter", list(st.session_state.parameters.keys()))
+    st.markdown("### Add Structured Constraint")
 
-    expr = f"{var_choice} {comparator} {rhs_param}"
+    var_choice = st.selectbox(
+        "Variable",
+        [v["name"] for v in st.session_state.variables]
+    )
+
+    selected_var = next(
+        v for v in st.session_state.variables
+        if v["name"] == var_choice
+    )
+
+    var_indices = selected_var["index"]
+
+    st.write("Variable dimensions:", var_indices)
+
+    constraint_dim = st.selectbox(
+        "Constraint dimension (apply over)",
+        var_indices
+    )
+
+    comparator = st.selectbox("Comparator", ["<=", ">=", "=="])
+
+    rhs_param = st.selectbox(
+        "RHS Parameter",
+        list(st.session_state.parameters.keys())
+    )
+
+    # Build expression
+    if len(var_indices) == 2:
+
+        i, j = var_indices
+
+        if constraint_dim == i:
+            expr = (
+                f"sum({var_choice}[{i},{j}] for {j} in {j}) "
+                f"{comparator} {rhs_param}[{i}] "
+                f"for {i} in {i}"
+            )
+
+        elif constraint_dim == j:
+            expr = (
+                f"sum({var_choice}[{i},{j}] for {i} in {i}) "
+                f"{comparator} {rhs_param}[{j}] "
+                f"for {j} in {j}"
+            )
+
+    else:
+        # 1D variable
+        idx = var_indices[0]
+        expr = f"{var_choice}[{idx}] {comparator} {rhs_param}[{idx}] for {idx} in {idx}"
 
     if st.button("Add Constraint"):
         st.session_state.constraints.append(expr)
 
     for i, c in enumerate(st.session_state.constraints):
-        col1, col2 = st.columns([4,1])
+        col1, col2 = st.columns([4, 1])
         col1.code(c)
         if col2.button("❌", key=f"del_{i}"):
             st.session_state.constraints.pop(i)
@@ -302,6 +370,7 @@ elif st.session_state.step == 6:
     if st.session_state.constraints:
         if st.button("Next ➡"):
             st.session_state.step = 7
+
 
 # =====================================================
 # STEP 7 — VALIDATE & SOLVE

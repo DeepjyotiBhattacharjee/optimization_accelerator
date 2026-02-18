@@ -69,7 +69,18 @@ class LinearParser(ast.NodeVisitor):
         else:
             index = self.visit(node.slice)
 
+        if isinstance(index, tuple) and index not in self.context[name]:
+            reversed_index = tuple(reversed(index))
+            if reversed_index in self.context[name]:
+                index = reversed_index
+        
+        print("NAME:", name)
+        print("PARAM KEYS SAMPLE:", list(self.context[name].keys())[:5])
+        print("LOOKUP INDEX:", index)
+
+
         return self.context[name][index]
+
 
     def visit_Name(self, node):
         return self.context[node.id]
