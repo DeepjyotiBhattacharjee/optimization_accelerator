@@ -7,11 +7,16 @@ from datetime import datetime
 import numpy as np
 
 
+# =====================================================
+# PAGE CONFIG
+# =====================================================
+
 st.set_page_config(layout="wide")
 st.title("🧠 Optimization Modeling Studio")
 
+
 # =====================================================
-# DATABASE SETUP
+# DATABASE INIT
 # =====================================================
 
 def init_db():
@@ -30,14 +35,12 @@ def init_db():
 
 init_db()
 
+
 # =====================================================
-# SAFE SERIALIZATION
+# JSON SAFE CONVERSION
 # =====================================================
 
 def convert_numpy(obj):
-    """
-    Recursively convert numpy types to native Python types.
-    """
     if isinstance(obj, dict):
         return {convert_numpy(k): convert_numpy(v) for k, v in obj.items()}
     elif isinstance(obj, list):
@@ -58,15 +61,12 @@ def make_json_safe(model_dict):
 
     safe = {}
 
-    # Convert datasets
     safe_datasets = {}
     for name, df in model_dict["datasets"].items():
         safe_datasets[name] = convert_numpy(df.to_dict(orient="records"))
     safe["datasets"] = safe_datasets
 
-    # Convert parameters (tuple keys → string + numpy fix)
     safe_parameters = {}
-
     for pname, pvals in model_dict["parameters"].items():
         new_param = {}
         for key, value in pvals.items():
@@ -74,9 +74,7 @@ def make_json_safe(model_dict):
                 new_key = "|".join(map(str, key))
             else:
                 new_key = str(key)
-
             new_param[new_key] = convert_numpy(value)
-
         safe_parameters[pname] = new_param
 
     safe["parameters"] = safe_parameters
@@ -88,20 +86,8 @@ def make_json_safe(model_dict):
     return safe
 
 
-
-def save_model(name, model_dict):
-    safe_model = make_json_safe(model_dict)
-    conn = sqlite3.connect("models.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO models (name, created_at, model_json)
-        VALUES (?, ?, ?)
-    """, (name, datetime.now().isoformat(), json.dumps(safe_model)))
-    conn.commit()
-    conn.close()
-
 # =====================================================
-# SESSION STATE INIT
+# SESSION INIT
 # =====================================================
 
 def init_state():
@@ -122,8 +108,9 @@ def init_state():
 
 init_state()
 
+
 # =====================================================
-# WIZARD HEADER
+# STEPS
 # =====================================================
 
 steps = [
@@ -137,6 +124,7 @@ steps = [
 ]
 
 st.subheader(steps[st.session_state.step - 1])
+
 
 # =====================================================
 # STEP 1 — UPLOAD
@@ -157,8 +145,9 @@ if st.session_state.step == 1:
         st.dataframe(df.head())
 
     if st.session_state.datasets:
-        if st.button("Next ➡"):
+        if st.button("Next ➡", key="step1_next"):
             st.session_state.step = 2
+
 
 # =====================================================
 # STEP 2 — SETS
@@ -167,16 +156,17 @@ if st.session_state.step == 1:
 elif st.session_state.step == 2:
 
     for name, df in st.session_state.datasets.items():
-        use_set = st.checkbox(f"Use {name} as set")
+        use_set = st.checkbox(f"Use {name} as set", key=f"set_{name}")
         if use_set:
-            col = st.selectbox(f"Column for {name}", df.columns)
+            col = st.selectbox(f"Column for {name}", df.columns, key=f"col_{name}")
             st.session_state.sets[name] = list(df[col].unique())
 
     st.json(st.session_state.sets)
 
     if st.session_state.sets:
-        if st.button("Next ➡"):
+        if st.button("Next ➡", key="step2_next"):
             st.session_state.step = 3
+
 
 # =====================================================
 # STEP 3 — PARAMETERS
@@ -203,11 +193,12 @@ elif st.session_state.step == 3:
     st.write("Current Parameters:", list(st.session_state.parameters.keys()))
 
     if st.session_state.parameters:
-        if st.button("Next ➡"):
+        if st.button("Next ➡", key="step3_next"):
             st.session_state.step = 4
 
+
 # =====================================================
-# STEP 4 — VARIABLES (WITH DOMAIN FILTER)
+# STEP 4 — VARIABLES
 # =====================================================
 
 elif st.session_state.step == 4:
@@ -252,41 +243,43 @@ elif st.session_state.step == 4:
     st.json(st.session_state.variables)
 
     if st.session_state.variables:
-        if st.button("Next ➡"):
+        if st.button("Next ➡", key="step4_next"):
             st.session_state.step = 5
 
+
 # =====================================================
-# STEP 5 — OBJECTIVE (AUTO)
+# STEP 5 — OBJECTIVE
 # =====================================================
 
 elif st.session_state.step == 5:
 
     obj_var = st.selectbox(
         "Variable",
-        [v["name"] for v in st.session_state.variables],
-        key="obj_var"
+        [v["name"] for v in st.session_state.variables]
     )
 
     obj_param = st.selectbox(
         "Parameter",
-        list(st.session_state.parameters.keys()),
-        key="obj_param"
+        list(st.session_state.parameters.keys())
     )
 
-    selected_var = next(
-        v for v in st.session_state.variables
-        if v["name"] == obj_var
-    )
-
+    selected_var = next(v for v in st.session_state.variables if v["name"] == obj_var)
     index_sets = selected_var["index"]
 
-    loops = " ".join([f"for {s} in {s}" for s in index_sets])
-    index_access = ",".join(index_sets)
-
-    generated_obj = (
-        f"sum({obj_param}[{index_access}] * "
-        f"{obj_var}[{index_access}] {loops})"
-    )
+    if len(index_sets) == 2:
+        set1, set2 = index_sets
+        generated_obj = (
+            f"sum({obj_param}[i,j] * {obj_var}[i,j] "
+            f"for i in {set1} for j in {set2})"
+        )
+    elif len(index_sets) == 1:
+        set1 = index_sets[0]
+        generated_obj = (
+            f"sum({obj_param}[i] * {obj_var}[i] "
+            f"for i in {set1})"
+        )
+    else:
+        generated_obj = ""
 
     st.code(generated_obj)
 
@@ -295,7 +288,7 @@ elif st.session_state.step == 5:
         st.success("Objective saved.")
 
     if st.session_state.objective:
-        if st.button("Next ➡"):
+        if st.button("Next ➡", key="step5_next"):
             st.session_state.step = 6
 
 
@@ -305,128 +298,129 @@ elif st.session_state.step == 5:
 
 elif st.session_state.step == 6:
 
-    st.markdown("### Add Structured Constraint")
+    expr = None
 
     var_choice = st.selectbox(
         "Variable",
         [v["name"] for v in st.session_state.variables]
     )
 
-    selected_var = next(
-        v for v in st.session_state.variables
-        if v["name"] == var_choice
-    )
-
+    selected_var = next(v for v in st.session_state.variables if v["name"] == var_choice)
     var_indices = selected_var["index"]
 
-    st.write("Variable dimensions:", var_indices)
-
-    constraint_dim = st.selectbox(
-        "Constraint dimension (apply over)",
-        var_indices
-    )
+    constraint_dim = st.selectbox("Constraint dimension", var_indices)
 
     comparator = st.selectbox("Comparator", ["<=", ">=", "=="])
 
-    rhs_param = st.selectbox(
-        "RHS Parameter",
-        list(st.session_state.parameters.keys())
+    rhs_param = st.selectbox("RHS Parameter", list(st.session_state.parameters.keys()))
+
+    rhs_multiplier = st.selectbox(
+        "Multiply RHS by Variable (optional)",
+        ["-- None --"] + [v["name"] for v in st.session_state.variables]
     )
 
-    # Build expression
     if len(var_indices) == 2:
 
-        i, j = var_indices
+        set1, set2 = var_indices
 
-        if constraint_dim == i:
+        if constraint_dim == set1:
+
+            if rhs_multiplier != "-- None --":
+
+                multiplier_var = next(
+                    v for v in st.session_state.variables
+                    if v["name"] == rhs_multiplier
+                )
+
+                if len(multiplier_var["index"]) == 1:
+                    expr = (
+                        f"sum({var_choice}[s,c] for c in {set2}) "
+                        f"{comparator} {rhs_param}[s] * {rhs_multiplier}[s] "
+                        f"for s in {set1}"
+                    )
+                else:
+                    expr = (
+                        f"sum({var_choice}[s,c] for c in {set2}) "
+                        f"{comparator} {rhs_param}[s] * {rhs_multiplier}[s,c] "
+                        f"for s in {set1}"
+                    )
+            else:
+                expr = (
+                    f"sum({var_choice}[s,c] for c in {set2}) "
+                    f"{comparator} {rhs_param}[s] "
+                    f"for s in {set1}"
+                )
+
+        elif constraint_dim == set2:
             expr = (
-                f"sum({var_choice}[{i},{j}] for {j} in {j}) "
-                f"{comparator} {rhs_param}[{i}] "
-                f"for {i} in {i}"
+                f"sum({var_choice}[s,c] for s in {set1}) "
+                f"{comparator} {rhs_param}[c] "
+                f"for c in {set2}"
             )
-
-        elif constraint_dim == j:
-            expr = (
-                f"sum({var_choice}[{i},{j}] for {i} in {i}) "
-                f"{comparator} {rhs_param}[{j}] "
-                f"for {j} in {j}"
-            )
-
-    else:
-        # 1D variable
-        idx = var_indices[0]
-        expr = f"{var_choice}[{idx}] {comparator} {rhs_param}[{idx}] for {idx} in {idx}"
 
     if st.button("Add Constraint"):
-        st.session_state.constraints.append(expr)
+        if expr is None:
+            st.error("Constraint could not be generated.")
+        else:
+            st.session_state.constraints.append(expr)
 
-    for i, c in enumerate(st.session_state.constraints):
+    for idx, c in enumerate(st.session_state.constraints):
         col1, col2 = st.columns([4, 1])
         col1.code(c)
-        if col2.button("❌", key=f"del_{i}"):
-            st.session_state.constraints.pop(i)
+        if col2.button("❌", key=f"del_{idx}"):
+            st.session_state.constraints.pop(idx)
             st.experimental_rerun()
 
     if st.session_state.constraints:
-        if st.button("Next ➡"):
+        if st.button("Next ➡", key="step6_next"):
             st.session_state.step = 7
 
 
 # =====================================================
-# STEP 7 — VALIDATE & SOLVE
+# STEP 7 — SOLVE
 # =====================================================
 
 elif st.session_state.step == 7:
 
-    issues = []
+    if st.button("Solve Model"):
 
-    if not st.session_state.sets:
-        issues.append("No sets defined.")
-    if not st.session_state.parameters:
-        issues.append("No parameters defined.")
-    if not st.session_state.variables:
-        issues.append("No variables defined.")
-    if not st.session_state.objective:
-        issues.append("No objective defined.")
-    if not st.session_state.constraints:
-        issues.append("No constraints defined.")
+        model_def = {
+            "datasets": st.session_state.datasets,
+            "sets": st.session_state.sets,
+            "parameters": st.session_state.parameters,
+            "variables": st.session_state.variables,
+            "objective": st.session_state.objective,
+            "constraints": st.session_state.constraints
+        }
 
-    if issues:
-        for issue in issues:
-            st.warning(issue)
-    else:
-        st.success("Model structurally complete.")
+        safe_model = make_json_safe(model_def)
 
-        if st.button("Solve Model"):
+        response = requests.post(
+            "http://localhost:8000/solve",
+            json=safe_model
+        )
 
-            model_def = {
-                "datasets": st.session_state.datasets,
-                "sets": st.session_state.sets,
-                "parameters": st.session_state.parameters,
-                "variables": st.session_state.variables,
-                "objective": st.session_state.objective,
-                "constraints": st.session_state.constraints
-            }
+        if response.status_code == 200:
+            result = response.json()
+            st.session_state.objective_value = result["objective"]
 
-            save_model("Untitled Model", model_def)
+            rows = []
+            for var_name, var_values in result["solution"].items():
+                for key, val in var_values.items():
+                    rows.append({
+                        "variable": var_name,
+                        "index": key,
+                        "value": val
+                    })
 
-            safe_model = make_json_safe(model_def)
+            st.session_state.solution = pd.DataFrame(rows)
 
-            response = requests.post("http://localhost:8000/solve", json=safe_model)
+        else:
+            st.error(response.text)
 
-            if response.status_code == 200:
-                result = response.json()
-                st.session_state.objective_value = result["objective"]
-                st.session_state.solution = pd.DataFrame(result["solution"])
-            else:
-                st.error(f"Status Code: {response.status_code}")
-                try:
-                    st.json(response.json())
-                except:
-                    st.write(response.text)
 
 # =====================================================
-# PROFESSIONAL OUTPUT PANEL
+# RESULTS
 # =====================================================
 
 if st.session_state.solution is not None:
@@ -434,21 +428,18 @@ if st.session_state.solution is not None:
     st.markdown("---")
     st.header("📊 Optimization Results")
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
 
-    col1.metric("💰 Objective Value", round(st.session_state.objective_value, 2))
-    col2.metric("🔢 Total Variables Returned", len(st.session_state.solution))
-    col3.metric("📦 Active Variables",
-                len(st.session_state.solution[st.session_state.solution["value"] > 0]))
+    col1.metric("Objective Value", round(st.session_state.objective_value, 2))
+    col2.metric("Active Variables",
+                len(st.session_state.solution[
+                    st.session_state.solution["value"] > 0
+                ]))
 
-    st.markdown("### 📋 Solution Details")
     st.dataframe(st.session_state.solution)
 
-    csv = st.session_state.solution.to_csv(index=False).encode()
-
     st.download_button(
-        "⬇ Download Solution CSV",
-        csv,
-        "solution.csv",
-        "text/csv"
+        "Download Solution CSV",
+        st.session_state.solution.to_csv(index=False),
+        "solution.csv"
     )

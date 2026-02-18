@@ -6,18 +6,18 @@ import pandas as pd
 
 def solve_model(model_def):
 
-    # -----------------------------
+    # ---------------------------------
     # Reconstruct datasets
-    # -----------------------------
+    # ---------------------------------
     datasets = {
         name: pd.DataFrame(records)
         for name, records in model_def["datasets"].items()
     }
     model_def["datasets"] = datasets
 
-    # -----------------------------
-    # Reconstruct parameter tuple keys FIRST
-    # -----------------------------
+    # ---------------------------------
+    # Reconstruct parameter tuple keys
+    # ---------------------------------
     def reconstruct_keys(param_dict):
         new_dict = {}
         for key, value in param_dict.items():
@@ -33,74 +33,70 @@ def solve_model(model_def):
         for name, p in model_def["parameters"].items()
     }
 
-    # -----------------------------
-    # Now build context
-    # -----------------------------
+    # ---------------------------------
+    # Build context
+    # ---------------------------------
     context = {}
     context.update(model_def["sets"])
     context.update(model_def["parameters"])
     context["__datasets__"] = model_def["datasets"]
 
-    # -----------------------------
+    # ---------------------------------
     # Build variables
-    # -----------------------------
+    # ---------------------------------
     build_variables(model_def, context)
 
-    # -----------------------------
+    # ---------------------------------
     # Build model
-    # -----------------------------
+    # ---------------------------------
     prob = LpProblem("Generic_MILP", LpMinimize)
 
-    print("\n========== DEBUG ==========")
-    print("OBJECTIVE STRING:", model_def["objective"])
-    print("CONSTRAINTS:", model_def["constraints"])
-    print("===========================\n")
-
-
+    # Objective
     prob += parse_expression(model_def["objective"], context)
 
-    # for cons in model_def["constraints"]:
-    #     prob += parse_expression(cons, context)
-
-    # -----------------------------
-    # Add Constraints
-    # -----------------------------
+    # ---------------------------------
+    # Constraints (multi-quantifier)
+    # ---------------------------------
     for cons in model_def["constraints"]:
 
         cons = cons.strip()
+        parts = cons.split(" for ")
 
-        # Detect outer quantifier
-        if " for " in cons:
+        if len(parts) > 1:
 
-            # Split only on LAST " for "
-            expr_part, quant_part = cons.rsplit(" for ", 1)
+            expr_part = parts[0].strip()
+            quantifiers = parts[1:]
 
-            if " in " in quant_part:
+            parsed_quantifiers = []
+            for q in quantifiers:
+                var_name, set_name = q.split(" in ")
+                parsed_quantifiers.append(
+                    (var_name.strip(), set_name.strip())
+                )
 
-                var_name, set_name = quant_part.split(" in ")
+            def expand(level, local_ctx):
+                if level == len(parsed_quantifiers):
+                    prob += parse_expression(expr_part, local_ctx)
+                    return
 
-                var_name = var_name.strip()
-                set_name = set_name.strip()
-
+                var_name, set_name = parsed_quantifiers[level]
                 iterable = context[set_name]
 
                 for val in iterable:
-                    local_ctx = context.copy()
-                    local_ctx[var_name] = val
-                    prob += parse_expression(expr_part.strip(), local_ctx)
+                    new_ctx = local_ctx.copy()
+                    new_ctx[var_name] = val
+                    expand(level + 1, new_ctx)
 
-            else:
-                prob += parse_expression(cons, context)
+            expand(0, context)
 
         else:
             prob += parse_expression(cons, context)
 
-
     prob.solve()
 
-    # -----------------------------
+    # ---------------------------------
     # Extract solution
-    # -----------------------------
+    # ---------------------------------
     solution = {}
     for var in model_def["variables"]:
         name = var["name"]

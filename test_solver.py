@@ -5,9 +5,10 @@ from backend.solver_engine import solve_model
 # Load REAL CSV DATA
 # -------------------------------------------------
 
-suppliers = pd.read_csv("optimization_data-main/suppliers.csv")
-customers = pd.read_csv("optimization_data-main/customers.csv")
-lanes = pd.read_csv("optimization_data-main/lanes.csv")
+customers = pd.read_csv("/Users/deepjyotibhattacharjee/Developer/optimization_accelerator/optimization_data-main/customers.csv")
+suppliers = pd.read_csv("/Users/deepjyotibhattacharjee/Developer/optimization_accelerator/optimization_data-main/suppliers_with_moq.csv")
+
+lanes = pd.read_csv("/Users/deepjyotibhattacharjee/Developer/optimization_accelerator/optimization_data-main/lanes.csv")
 
 # test_data/customers.csv
 # /Users/deepjyotibhattacharjee/Developer/optimization_accelerator/test_data/customers.csv
@@ -54,10 +55,13 @@ model_def = {
     ],
     "objective":
         "sum(ship_cost[i,j] * x[i,j] for i in suppliers for j in customers)",
+
     "constraints": [
-        "sum(x[i,j] for j in customers) <= capacity[i] for i in suppliers",
-        "sum(x[i,j] for i in suppliers) >= demand[j] for j in customers"
-    ]
+    "sum(x[i,j] for j in customers) <= capacity[i] for i in suppliers",
+    "sum(x[i,j] for i in suppliers) >= demand[j] for j in customers",
+    "x[i,j] >= 10 * y[i,j] for i in suppliers for j in customers",
+    "x[i,j] <= capacity[i] * y[i,j] for i in suppliers for j in customers"
+]
 }
 
 # -------------------------------------------------

@@ -1,6 +1,7 @@
 import ast
 from pulp import lpSum
 
+
 class LinearParser(ast.NodeVisitor):
 
     def __init__(self, context):
@@ -38,7 +39,6 @@ class LinearParser(ast.NodeVisitor):
     def visit_Call(self, node):
         if node.func.id != "sum":
             raise ValueError("Only sum() allowed")
-
         return self.handle_generator(node.args[0])
 
     def handle_generator(self, gen):
@@ -69,18 +69,17 @@ class LinearParser(ast.NodeVisitor):
         else:
             index = self.visit(node.slice)
 
-        if isinstance(index, tuple) and index not in self.context[name]:
-            reversed_index = tuple(reversed(index))
-            if reversed_index in self.context[name]:
-                index = reversed_index
-        
-        print("NAME:", name)
-        print("PARAM KEYS SAMPLE:", list(self.context[name].keys())[:5])
-        print("LOOKUP INDEX:", index)
-
+        if isinstance(index, tuple):
+            if index in self.context[name]:
+                pass
+            elif tuple(reversed(index)) in self.context[name]:
+                index = tuple(reversed(index))
+            else:
+                raise KeyError(
+                    f"Index {index} not found in {name}"
+                )
 
         return self.context[name][index]
-
 
     def visit_Name(self, node):
         return self.context[node.id]
